@@ -62,9 +62,17 @@ Game.saveGame = function(path) {
     });
 };
 
-Game.saveGameSync = function(path) {
-    fs.writeFileSync(path, JSON.stringify(Game.instance));
-    resolve(JSON.stringify(Game.instance));
+Game.loadGame = function(path) {
+    return new Promise(function(resolve, reject) {
+        fs.readFile(path, function(err, data) {
+            if (err) reject(err);
+            else {
+
+                Game.instance = JSON.parse(data);
+                resolve(Game.instance);
+            }
+        });
+    });
 };
 
 Game.bet = function(money) {
@@ -130,8 +138,8 @@ Game.checkEnd = function(stand) {
         return {
             winner: 'computer'
         };
-    } else {
-        game.user.money += game.table.money/2;
+    } else if (game.user.count == game.table.count) {
+        game.user.money += (game.table.money/2);
         return { winner: null };
     };
 };
