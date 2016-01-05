@@ -32,7 +32,7 @@ var rl = readline.createInterface({
 var beginGame = function() {
     async.waterfall([
         function generateDeck(callback) {
-            if (savedGame == null || savedGame.deck.length <= 7) {
+            if (savedGame == null || savedGame.deck.length <= 4) {
                 rl.question('How many decks do you want? ', function(deck_count) {
                     var deck = [];
                     for (var i = 0;i < deck_count;i++) {
@@ -66,6 +66,10 @@ var beginGame = function() {
                 });
             } else {
                 var game = savedGame;
+                game.to_add = {
+                    uston_count: 0,
+                    hilo_count: 0
+                };
                 console.log(`Starting Uston SS count: ${game.uston_count}`);
                 console.log(`Starting Hi-Lo count: ${game.hilo_count}`);
                 console.log('======================================');
@@ -126,12 +130,13 @@ var beginGame = function() {
             console.log(`Your cards are: ${cards} (${game.user.count})`);
             console.log(`Current Hi-Lo count: ${game.hilo_count}`);
             console.log(`Current Uston SS count: ${game.uston_count}`);
+            console.log('======================================');
 
             callback(null, game);
         }
     ], function(err, game) {
         var restart = function(game_obj) {
-            rl.question('R = Restart game / S = Shuffle remaining cards', function(answer) {
+            rl.question('R = Restart game / S = Shuffle remaining cards ', function(answer) {
                 switch (answer) {
                     case 'S':
                         savedGame = game_obj;
@@ -141,6 +146,7 @@ var beginGame = function() {
                         savedGame = null;
                         beginGame();
                         break;
+
                     default:
                         console.log('Unknown command.');
                         restart();
@@ -148,16 +154,34 @@ var beginGame = function() {
                 };
             });
         };
-        var getCommand = function() {
-            rl.question('H = Hit / S = Stand / SV = Save game ', function(command) {
+        var getCommand = function(c) {
+            var handleCommands = function(command) {
                 switch (command) {
+                    case 'D':
+                        game.user.money -= game.table.money/2;
+                        game.table.money *= 2;
+                        console.log(`You raised ${game.table.money/2}`);
+                        handleCommands('H');
+                        handleCommands('S');
+                        break;
                     case 'SV':
                         fs.writeFile('game.json', JSON.stringify(game), function() {
                             console.log('Saved successfully!');
                             getCommand();
                         });
                         break;
+                    case 'I':
+                        console.log(`There are ${game.deck.length} cards left of the deck`);
+                        console.log(`You have ${game.user.money} in your account`);
+                        console.log(`This table has ${game.table.money} in stake`);
+                        console.log('======================================');
+                        getCommand();
+                        break;
                     case 'H':
+                        if (game.deck.length < 1) {
+                            console.log('You ran out of cards.');
+                            beginGame();
+                        }
                         var new_card = randomRange(0, game.deck.length-1);
                         game.user.cards.push(game.deck[new_card]);
                         game.user.count += game.user.cards[game.user.cards.length-1].add_count;
@@ -174,15 +198,20 @@ var beginGame = function() {
                         console.log(`Current Uston SS count: ${game.uston_count}`);
                         console.log('======================================');
 
+                        var table_cards = "";
+                        for (var i = 0;i < game.table.cards;i++) {
+                            table_cards = table_cards + game.table.cards[i].value + "/";
+                        }
+                        table_cards = table_cards.substr(0, table_cards.length-1);
                         if (game.user.count > 21) {
-                            console.log(`Table has ${game.table.count} and you have ${game.user.count}`);
+                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
                             console.log('You lost!');
                             console.log('======================================');
                             restart(game);
                         }
                         else if (game.user.count == 21) {
                             game.user.money += game.table.money;
-                            console.log(`Table has ${game.table.count} and you have ${game.user.count}`);
+                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
                             console.log('You won!');
                             console.log('======================================');
                             restart(game);
@@ -190,7 +219,9 @@ var beginGame = function() {
                         else getCommand();
                         break;
                     case 'S':
-                        while (game.table.count < 17) {
+                        while   (game.table.count < 17 ||
+                                (game.table.count > 10 && game.uston_count < 0 && game.hilo_count < 0))
+                        {
                             var new_card = randomRange(0, game.deck.length-1);
                             game.table.cards.push(game.deck[new_card]);
                             game.table.count += game.table.cards[game.table.cards.length-1].add_count;
@@ -200,10 +231,14 @@ var beginGame = function() {
                         }
                         game.uston_count += game.to_add.uston_count;
                         game.hilo_count += game.to_add.hilo_count;
-                        game.to_add = {};
 
+                        var table_cards = "";
+                        for (var i = 0;i < game.table.cards;i++) {
+                            table_cards = table_cards + game.table.cards[i].value + "/";
+                        }
+                        table_cards = table_cards.substr(0, table_cards.length-1);
                         if (game.table.count === game.user.count) {
-                            console.log(`Table has ${game.table.count} and you have ${game.user.count}`);
+                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
                             game.user.money += game.table.money/2;
                             console.log(`It's a tie!`);
                             console.log('======================================');
@@ -211,12 +246,12 @@ var beginGame = function() {
                         }
                         else if (game.table.count > 21 || game.table.count < game.user.count) {
                             game.user.money += game.table.money;
-                            console.log(`Table has ${game.table.count} and you have ${game.user.count}`);
+                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
                             console.log('You won!');
                             console.log('======================================');
                             restart(game);
                         } else if (game.table.count == 21 || game.table.count > game.user.count) {
-                            console.log(`Table has ${game.table.count} and you have ${game.user.count}`);
+                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
                             console.log('You lost!');
                             console.log('======================================');
                             restart(game);
@@ -227,7 +262,15 @@ var beginGame = function() {
                         getCommand();
                         break;
                 };
-            });
+            };
+            if (c !== undefined) {
+                handleCommands(c);
+            } else {
+                rl.question('H = Hit / S = Stand / D = Double / SV = Save game / I = Info ', function(command) {
+                    handleCommands(command);
+                });
+            }
+
         }
         getCommand();
     });
