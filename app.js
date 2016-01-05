@@ -1,7 +1,7 @@
 var readline = require('readline');
 var async = require('async');
-var fs = require('fs');
 
+var Game = require('./game');
 var savedGame = null;
 
 function randomRange(min, max) {
@@ -34,35 +34,11 @@ var beginGame = function() {
         function generateDeck(callback) {
             if (savedGame == null || savedGame.deck.length <= 4) {
                 rl.question('How many decks do you want? ', function(deck_count) {
-                    var deck = [];
-                    for (var i = 0;i < deck_count;i++) {
-                        for (var j = 0;j < cards.length;j++) {
-                            deck.push(cards[j]);
-                        }
-                    }
-                    var uston_count = deck_count * -2;
-                    var hilo_count = 0;
-                    console.log(`Starting count of Uston SS: ${uston_count}`);
-                    console.log(`Starting Hi-Lo count: ${hilo_count}`);
+                    var game = Game.generateDeck(deck_count);
+                    console.log(`Starting count of Uston SS: ${game.uston_count}`);
+                    console.log(`Starting Hi-Lo count: ${game.hilo_count}`);
                     console.log('======================================');
-                    callback(null, {
-                        deck,
-                        hilo_count,
-                        uston_count,
-                        user: {
-                            money: 5000,
-                            cards: [],
-                            count: 0
-                        },
-                        to_add: {
-                            hilo_count: 0,
-                            uston_count: 0
-                        },
-                        table: {
-                            cards: [],
-                            count: 0
-                        }
-                    });
+                    callback(null);
                 });
             } else {
                 var game = savedGame;
@@ -79,46 +55,18 @@ var beginGame = function() {
                 game.table.money = 0;
                 game.user.count = 0;
                 game.table.count = 0;
-                callback(null, game);
+                callback(null);
             }
         },
-        function selectBet(game, callback) {
+        function selectBet(callback) {
+            var game = Game.instance;
             rl.question(`How much do you want to bet? (You have $${game.user.money},00): `, function(bet) {
-                game.table.money = bet*2;
-                game.user.money -= bet;
-                callback(null, game);
+                Game.bet(bet);
+                callback(null);
             });
         },
-        function giveCards(game, callback) {
-            var userCards = [randomRange(0, game.deck.length-1), randomRange(0, game.deck.length-1)];
-            //Protect against same cards in random
-            while (userCards[0] === userCards[1]) {
-                userCards[1] = randomRange(0, game.deck.length-1);
-            }
-            //Generating user cards
-            for (var i = 0; i < userCards.length;i++)  {
-                game.user.cards.push(game.deck[userCards[i]]);
-                game.hilo_count += game.deck[userCards[i]].hilo;
-                game.uston_count += game.deck[userCards[i]].uston;
-                game.user.count += game.deck[userCards[i]].add_count;
-                game.deck.splice(userCards[i], 1);
-            }
-
-            var tableCards = [randomRange(0, game.deck.length-1), randomRange(0, game.deck.length-1)];
-            //Protect against same cards in random
-            while (tableCards[0] === tableCards[1]) {
-                tableCards[1] = randomRange(0, game.deck.length-1);
-            }
-            //Generating table cards
-            for (var i = 0; i < tableCards.length;i++)  {
-                game.table.cards.push(game.deck[tableCards[i]]);
-                if (i === 0) {
-                    game.hilo_count += game.deck[tableCards[i]].hilo;
-                    game.uston_count += game.deck[tableCards[i]].uston;
-                }
-                game.table.count += game.deck[tableCards[i]].add_count;
-                game.deck.splice(tableCards[i], 1);
-            }
+        function giveCards(callback) {
+            var game = Game.giveCards();
 
             //Doing calculations
             console.log(`The table has: ${game.table.cards[0].value}`);
@@ -132,9 +80,9 @@ var beginGame = function() {
             console.log(`Current Uston SS count: ${game.uston_count}`);
             console.log('======================================');
 
-            callback(null, game);
+            callback(null);
         }
-    ], function(err, game) {
+    ], function() {
         var restart = function(game_obj) {
             rl.question('R = Restart game / S = Shuffle remaining cards ', function(answer) {
                 switch (answer) {
@@ -155,20 +103,16 @@ var beginGame = function() {
             });
         };
         var getCommand = function(c) {
+            var game = Game.instance;
             var handleCommands = function(command) {
                 switch (command) {
                     case 'D':
-                        game.user.money -= game.table.money/2;
-                        game.table.money *= 2;
-                        console.log(`You raised ${game.table.money/2}`);
-                        handleCommands('H');
+                        Game.double();
                         handleCommands('S');
                         break;
                     case 'SV':
-                        fs.writeFile('game.json', JSON.stringify(game), function() {
-                            console.log('Saved successfully!');
-                            getCommand();
-                        });
+                        Game.saveGame('game.json');
+                        console.log('Saved successfuly!');
                         break;
                     case 'I':
                         console.log(`There are ${game.deck.length} cards left of the deck`);
@@ -182,12 +126,7 @@ var beginGame = function() {
                             console.log('You ran out of cards.');
                             beginGame();
                         }
-                        var new_card = randomRange(0, game.deck.length-1);
-                        game.user.cards.push(game.deck[new_card]);
-                        game.user.count += game.user.cards[game.user.cards.length-1].add_count;
-                        game.hilo_count += game.user.cards[game.user.cards.length-1].hilo;
-                        game.uston_count += game.user.cards[game.user.cards.length-1].uston;
-                        game.deck.splice(new_card, 1);
+                        var result = Game.hit();
                         var cards = "";
                         for (var i = 0;i < game.user.cards.length;i++) {
                             cards = cards + game.user.cards[i].value + '/';
@@ -203,59 +142,28 @@ var beginGame = function() {
                             table_cards = table_cards + game.table.cards[i].value + "/";
                         }
                         table_cards = table_cards.substr(0, table_cards.length-1);
-                        if (game.user.count > 21) {
+                        if (result.winner !== null) {
                             console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
-                            console.log('You lost!');
-                            console.log('======================================');
-                            restart(game);
-                        }
-                        else if (game.user.count == 21) {
-                            game.user.money += game.table.money;
-                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
-                            console.log('You won!');
+                            console.log(`Winner: ${result.winner}`);
                             console.log('======================================');
                             restart(game);
                         }
                         else getCommand();
                         break;
                     case 'S':
-                        while   (game.table.count < 17 ||
-                                (game.table.count > 10 && game.uston_count < 0 && game.hilo_count < 0))
-                        {
-                            var new_card = randomRange(0, game.deck.length-1);
-                            game.table.cards.push(game.deck[new_card]);
-                            game.table.count += game.table.cards[game.table.cards.length-1].add_count;
-                            game.to_add.hilo_count += game.table.cards[game.table.cards.length-1].hilo;
-                            game.to_add.uston_count += game.table.cards[game.table.cards.length-1].uston;
-                            game.deck.splice(new_card, 1);
-                        }
-                        game.uston_count += game.to_add.uston_count;
-                        game.hilo_count += game.to_add.hilo_count;
+
+                        var result = Game.stand();
 
                         var table_cards = "";
                         for (var i = 0;i < game.table.cards;i++) {
                             table_cards = table_cards + game.table.cards[i].value + "/";
                         }
                         table_cards = table_cards.substr(0, table_cards.length-1);
-                        if (game.table.count === game.user.count) {
-                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
-                            game.user.money += game.table.money/2;
-                            console.log(`It's a tie!`);
-                            console.log('======================================');
-                            restart(game);
-                        }
-                        else if (game.table.count > 21 || game.table.count < game.user.count) {
-                            game.user.money += game.table.money;
-                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
-                            console.log('You won!');
-                            console.log('======================================');
-                            restart(game);
-                        } else if (game.table.count == 21 || game.table.count > game.user.count) {
-                            console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
-                            console.log('You lost!');
-                            console.log('======================================');
-                            restart(game);
-                        }
+                        console.log(`Table has ${table_cards}(${game.table.count}) and you have ${game.user.count}`);
+                        if (result.winner !== null) console.log(`Winner: ${result.winner}`);
+                        else console.log('It`s a tie!');
+                        console.log('======================================');
+                        restart(game);
                         break;
                     default:
                         console.log('Unknown command, type again.');
